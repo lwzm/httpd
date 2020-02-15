@@ -2,13 +2,21 @@
 
 ### Stream
 
-*todo*.
+```sh
+go get github.com/lwzm/httpd/stream
+```
 
 ### Notice
 
-*todo*.
+```sh
+go get github.com/lwzm/httpd/notice
+```
 
 ### Agency
+
+```sh
+go get github.com/lwzm/httpd/agency
+```
 
 Apis:
 
