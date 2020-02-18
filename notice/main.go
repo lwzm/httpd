@@ -29,7 +29,7 @@ func (data *payload) transport(w http.ResponseWriter) {
 	}
 }
 
-func payloadNew(r *http.Request) payload {
+func newPayload(r *http.Request) payload {
 	return payload{
 		r.Body,
 		r.Header.Get("Content-Type"),
@@ -65,79 +65,82 @@ func responseError(err error, w http.ResponseWriter) {
 	fmt.Fprint(w, err)
 }
 
-func init() {
-	pool := stack{make([]string, 100), sync.Mutex{}}
-	channels := make(map[string](chan chan payload))
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		key := r.URL.Path
-		_, all := r.URL.Query()["all"]
-		ctx := r.Context()
-		ch, ok := channels[key]
-		if !ok {
-			ch = make(chan chan payload)
-			channels[key] = ch
+var pool = stack{make([]string, 100), sync.Mutex{}}
+var channels = make(map[string](chan chan payload))
+
+func handler(w http.ResponseWriter, r *http.Request) {
+	key := r.URL.Path
+	_, all := r.URL.Query()["all"]
+	ctx := r.Context()
+	ch, ok := channels[key]
+	if !ok {
+		ch = make(chan chan payload)
+		channels[key] = ch
+	}
+	if r.Method == "GET" {
+		select {
+		case chTmp := <-ch:
+			data := <-chTmp
+			data.transport(w)
+			close(chTmp)
+		case <-ctx.Done():
+			log.Println(ctx)
 		}
-		if r.Method == "GET" {
-			select {
-			case chTmp := <-ch:
-				data := <-chTmp
-				data.transport(w)
-				close(chTmp)
-			case <-ctx.Done():
-				log.Println(ctx)
+	} else {
+		n := 0
+		if all {
+			// use temp file
+			mime := r.Header.Get("Content-Type")
+			tmp := pool.pop()
+			defer pool.push(tmp)
+			f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE, 0600)
+			defer os.Remove(tmp)
+			if err != nil {
+				responseError(err, w)
+				return
 			}
-		} else {
-			n := 0
-			if all {
-				// use temp file
-				mime := r.Header.Get("Content-Type")
-				tmp := pool.pop()
-				defer pool.push(tmp)
-				f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE, 0600)
-				defer os.Remove(tmp)
+			defer f.Close()
+			{
+				_, err := io.Copy(f, r.Body)
 				if err != nil {
 					responseError(err, w)
 					return
 				}
-				defer f.Close()
-				{
-					_, err := io.Copy(f, r.Body)
+			}
+			for {
+				chTmp := make(chan payload)
+				select {
+				case ch <- chTmp:
+					f, err := os.OpenFile(tmp, os.O_RDONLY, 0)
 					if err != nil {
 						responseError(err, w)
 						return
 					}
-				}
-				for {
-					chTmp := make(chan payload)
-					select {
-					case ch <- chTmp:
-						f, err := os.OpenFile(tmp, os.O_RDONLY, 0)
-						if err != nil {
-							responseError(err, w)
-							return
-						}
-						chTmp <- payload{f, mime}
-						n++
-					default:
-						goto end
-					}
-				}
-			end:
-			} else {
-				chTmp := make(chan payload)
-				select {
-				case ch <- chTmp:
-					chTmp <- payloadNew(r)
-					<-chTmp
+					chTmp <- payload{f, mime}
 					n++
 				default:
-					w.WriteHeader(404)
-					return
+					goto end
 				}
 			}
-			fmt.Fprint(w, n)
+		end:
+		} else {
+			chTmp := make(chan payload)
+			select {
+			case ch <- chTmp:
+				chTmp <- newPayload(r)
+				<-chTmp
+				n++
+			default:
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 		}
-	})
+		fmt.Fprint(w, n)
+	}
+}
+
+func init() {
+	http.HandleFunc("/", handler)
 }
 
 func main() {
