@@ -139,10 +139,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func init() {
-	http.HandleFunc("/", handler)
-}
-
 func main() {
+	http.HandleFunc("/", handler)
 	httpd.Start()
 }

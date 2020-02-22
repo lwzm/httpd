@@ -9,22 +9,21 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func Test_handler(t *testing.T) {
+	assert := assert.New(t)
 	test := func(method, target string, body io.Reader, status int, text string) {
 		req := httptest.NewRequest(method, target, body)
 		w := httptest.NewRecorder()
 		handler(w, req)
 		resp := w.Result()
-		if n := resp.StatusCode; n != status {
-			t.Error(method, target, status, n)
-		}
+		assert.Equal(status, resp.StatusCode)
 		if text != "" {
 			body, _ := ioutil.ReadAll(resp.Body)
-			if s := string(body); s != text {
-				t.Error(method, target, text, s)
-			}
+			assert.Equal(text, string(body))
 		}
 	}
 
