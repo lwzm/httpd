@@ -2,47 +2,62 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/gavv/httpexpect"
 )
 
 func Test_handler(t *testing.T) {
-	assert := assert.New(t)
-	test := func(method, target string, body io.Reader, status int, text string) {
-		req := httptest.NewRequest(method, target, body)
-		w := httptest.NewRecorder()
-		handler(w, req)
-		resp := w.Result()
-		assert.Equal(status, resp.StatusCode)
-		if text != "" {
-			body, _ := ioutil.ReadAll(resp.Body)
-			assert.Equal(text, string(body))
-		}
-	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", handler)
+	server := httptest.NewServer(mux)
+	defer server.Close()
 
-	test("POST", "/", nil, http.StatusNotFound, "")
+	e := httpexpect.New(t, server.URL)
+	e.POST("/").Expect().Status(http.StatusNotFound).Body().Empty()
 
-	go test("GET", "/", nil, http.StatusOK, "")
+	go func() {
+		e.GET("/t1").Expect().Status(http.StatusOK)
+	}()
 	time.Sleep(time.Millisecond)
-	test("POST", "/", nil, http.StatusOK, "1")
+	e.POST("/t1").Expect().Status(http.StatusOK).Text().Equal("1")
 
-	test("POST", "/?all", nil, http.StatusOK, "0")
+	go func() {
+		e.GET("/json").Expect().
+			Status(http.StatusOK).
+			JSON().Number().Equal(1)
+	}()
+	time.Sleep(time.Millisecond)
+	e.POST("/json").WithJSON(1).Expect().Status(http.StatusOK)
 
-	n := 100
+	e.POST("/has-no-one-get").WithQueryString("all").Expect().Status(http.StatusOK).Text().Equal("0")
+
+	n := 5
+
+	c := func() {
+		e.GET("/multi-get").Expect().Status(http.StatusOK).Text().Equal("foobar")
+	}
 	for i := 0; i < n; i++ {
-		go test("GET", "/", nil, http.StatusOK, "foobar")
+		go c()
 	}
 	time.Sleep(time.Millisecond)
+	e.POST("/multi-get").WithText("foobar").
+		Expect().Text().Equal("1")
+	e.POST("/multi-get").WithQueryString("all").WithText("foobar").
+		Expect().Text().Equal(fmt.Sprint(n - 1))
 
-	body := strings.NewReader("foobar")
-	test("POST", "/", body, http.StatusOK, "1")
-	body.Seek(0, io.SeekStart)
-	test("POST", "/?all", body, http.StatusOK, fmt.Sprint(n-1))
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			e.GET(fmt.Sprintf("/%v", i)).Expect().Status(http.StatusOK)
+		}(i)
+	}
+	time.Sleep(time.Millisecond)
+	for i := 0; i < n; i++ {
+		e.POST(fmt.Sprintf("/%v", i)).Expect().Status(http.StatusOK)
+	}
+
+	time.Sleep(time.Millisecond * 10)
 }
