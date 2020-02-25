@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -65,10 +66,42 @@ func TestTimeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(handler))
 	defer server.Close()
 
-	tr := &http.Transport{
-		ResponseHeaderTimeout: time.Second / 10,
-	}
-	client := &http.Client{Transport: tr}
+	client := &http.Client{Timeout: time.Second / 10}
 	_, err := client.Get(server.URL)
 	assert.Error(t, http.ErrHandlerTimeout, err)
+}
+
+type stream struct {
+	count int
+	max   int
+	piece []byte
+}
+
+func (st *stream) Read(p []byte) (int, error) {
+	if st.count < st.max {
+		// time.Sleep(time.Second / 1000)
+		n := copy(p, st.piece)
+		st.count++
+		return n, nil
+	}
+	return 0, io.EOF
+}
+
+func TestIOError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(handler))
+	defer server.Close()
+
+	e := httpexpect.New(t, server.URL)
+
+	go func() {
+		e.GET("/").Expect().Body().Length().Equal(6000)
+	}()
+
+	time.Sleep(time.Millisecond)
+
+	e.POST("/").
+		WithChunked(&stream{max: 3000, piece: []byte{65, 66}}).
+		Expect().Status(http.StatusOK)
+
+	time.Sleep(time.Millisecond * 10)
 }

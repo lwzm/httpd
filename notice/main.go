@@ -59,24 +59,21 @@ func (t *stack) pop() string {
 	return fmt.Sprintf(".%v.tmp", n)
 }
 
-func responseError(err error, w http.ResponseWriter) {
-	log.Println(err)
-	w.WriteHeader(500)
-	fmt.Fprint(w, err)
-}
-
 var pool = stack{make([]string, 100), sync.Mutex{}}
 var channels = make(map[string](chan chan payload))
+var mutex = sync.Mutex{}
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	key := r.URL.Path
 	_, all := r.URL.Query()["all"]
 	ctx := r.Context()
+	mutex.Lock()
 	ch, ok := channels[key]
 	if !ok {
 		ch = make(chan chan payload)
 		channels[key] = ch
 	}
+	mutex.Unlock()
 	if r.Method == "GET" {
 		select {
 		case chTmp := <-ch:
@@ -93,19 +90,13 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			mime := r.Header.Get("Content-Type")
 			tmp := pool.pop()
 			defer pool.push(tmp)
-			f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE, 0600)
-			defer os.Remove(tmp)
+			f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 			if err != nil {
-				responseError(err, w)
-				return
+				log.Fatal(err)
 			}
 			defer f.Close()
-			{
-				_, err := io.Copy(f, r.Body)
-				if err != nil {
-					responseError(err, w)
-					return
-				}
+			if _, err := io.Copy(f, r.Body); err != nil {
+				log.Fatal(err)
 			}
 			for {
 				chTmp := make(chan payload)
@@ -113,8 +104,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 				case ch <- chTmp:
 					f, err := os.OpenFile(tmp, os.O_RDONLY, 0)
 					if err != nil {
-						responseError(err, w)
-						return
+						log.Fatal(err)
 					}
 					chTmp <- payload{f, mime}
 					n++
