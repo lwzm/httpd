@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gavv/httpexpect"
+	"github.com/stretchr/testify/assert"
 )
 
 func Test_handler(t *testing.T) {
@@ -37,11 +38,10 @@ func Test_handler(t *testing.T) {
 
 	n := 5
 
-	c := func() {
-		e.GET("/multi-get").Expect().Status(http.StatusOK).Text().Equal("foobar")
-	}
 	for i := 0; i < n; i++ {
-		go c()
+		go func() {
+			e.GET("/multi-get").Expect().Status(http.StatusOK).Text().Equal("foobar")
+		}()
 	}
 	time.Sleep(time.Millisecond)
 	e.POST("/multi-get").WithText("foobar").
@@ -60,4 +60,15 @@ func Test_handler(t *testing.T) {
 	}
 
 	time.Sleep(time.Millisecond * 10)
+}
+func TestTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(handler))
+	defer server.Close()
+
+	tr := &http.Transport{
+		ResponseHeaderTimeout: time.Second / 10,
+	}
+	client := &http.Client{Transport: tr}
+	_, err := client.Get(server.URL)
+	assert.Error(t, http.ErrHandlerTimeout, err)
 }
