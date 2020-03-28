@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,7 +26,7 @@ func Test_handler(t *testing.T) {
 		e.GET("/t1").Expect().Status(http.StatusOK)
 	}()
 	time.Sleep(time.Millisecond)
-	e.POST("/t1").Expect().Status(http.StatusOK).Text().Equal("1")
+	e.POST("/t1").Expect().Status(http.StatusOK).Text().Contains("\t")
 
 	go func() {
 		e.GET("/json").Expect().
@@ -35,9 +36,9 @@ func Test_handler(t *testing.T) {
 	time.Sleep(time.Millisecond)
 	e.POST("/json").WithJSON(1).Expect().Status(http.StatusOK)
 
-	e.POST("/has-no-one-get").WithQueryString("all").Expect().Status(http.StatusOK).Text().Equal("0")
+	e.POST("/has-no-one-get").WithQueryString("all").Expect().Status(http.StatusOK).Body().Equal("")
 
-	n := 5
+	n := 50
 
 	for i := 0; i < n; i++ {
 		go func() {
@@ -46,9 +47,10 @@ func Test_handler(t *testing.T) {
 	}
 	time.Sleep(time.Millisecond)
 	e.POST("/multi-get").WithText("foobar").
-		Expect().Text().Equal("1")
-	e.POST("/multi-get").WithQueryString("all").WithText("foobar").
-		Expect().Text().Equal(fmt.Sprint(n - 1))
+		Expect().Text().Contains("\t")
+	s := e.POST("/multi-get").WithQueryString("all").WithText("foobar").
+		Expect().Text().Raw()
+	assert.Equal(t, n-1, strings.Count(s, "\n"))
 
 	for i := 0; i < n; i++ {
 		go func(i int) {

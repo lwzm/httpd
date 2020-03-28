@@ -13,11 +13,11 @@ import (
 
 type payload struct {
 	body io.ReadCloser
-	mime string
+	meta string
 }
 
 func (data *payload) transport(w http.ResponseWriter) {
-	if s := data.mime; s != "" {
+	if s := data.meta; s != "" {
 		w.Header().Set("Content-Type", s)
 	}
 	if f := data.body; f != nil {
@@ -79,12 +79,11 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		case chTmp := <-ch:
 			data := <-chTmp
 			data.transport(w)
-			close(chTmp)
+			chTmp <- payload{meta: httpd.ClientIP(r) + "\t" + r.UserAgent()}
 		case <-ctx.Done():
 			log.Println(ctx)
 		}
 	} else {
-		n := 0
 		if all {
 			// use temp file
 			mime := r.Header.Get("Content-Type")
@@ -98,6 +97,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			if _, err := io.Copy(f, r.Body); err != nil {
 				log.Fatal(err)
 			}
+			todos := make([]chan payload, 0)
 			for {
 				chTmp := make(chan payload)
 				select {
@@ -107,25 +107,26 @@ func handler(w http.ResponseWriter, r *http.Request) {
 						log.Fatal(err)
 					}
 					chTmp <- payload{f, mime}
-					n++
+					todos = append(todos, chTmp)
 				default:
 					goto end
 				}
 			}
 		end:
+			for _, chTmp := range todos {
+				fmt.Fprintln(w, (<-chTmp).meta)
+			}
 		} else {
 			chTmp := make(chan payload)
 			select {
 			case ch <- chTmp:
 				chTmp <- newPayload(r)
-				<-chTmp
-				n++
+				fmt.Fprintln(w, (<-chTmp).meta)
 			default:
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
 		}
-		fmt.Fprint(w, n)
 	}
 }
 
