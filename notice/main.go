@@ -5,14 +5,13 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"sync"
 
 	"github.com/lwzm/httpd"
 )
 
 type payload struct {
-	body io.ReadCloser
+	body io.Reader
 	meta string
 }
 
@@ -25,47 +24,15 @@ func (data *payload) transport(w http.ResponseWriter) {
 		if err != nil {
 			log.Println("written", n, err)
 		}
-		f.Close()
 	}
 }
 
-func newPayload(r *http.Request) payload {
-	return payload{
-		r.Body,
-		r.Header.Get("Content-Type"),
-	}
-}
-
-type stack struct {
-	data  []string
-	mutex sync.Mutex
-}
-
-func (t *stack) push(s string) {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-	t.data = append(t.data, s)
-}
-
-func (t *stack) pop() string {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-	l := t.data
-	n := len(l) - 1
-	t.data = l[:n]
-	if l[n] != "" {
-		return l[n]
-	}
-	return fmt.Sprintf(".%v.tmp", n)
-}
-
-var pool = stack{make([]string, 100), sync.Mutex{}}
 var channels = make(map[string](chan chan payload))
 var mutex = sync.Mutex{}
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	key := r.URL.Path
-	_, all := r.URL.Query()["all"]
+	_, single := r.URL.Query()["single"]
 	ctx := r.Context()
 	mutex.Lock()
 	ch, ok := channels[key]
@@ -74,6 +41,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		channels[key] = ch
 	}
 	mutex.Unlock()
+
 	if r.Method == "GET" {
 		select {
 		case chTmp := <-ch:
@@ -84,48 +52,41 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			log.Println(ctx)
 		}
 	} else {
-		if all {
-			// use temp file
-			mime := r.Header.Get("Content-Type")
-			tmp := pool.pop()
-			defer pool.push(tmp)
-			f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
-			if err != nil {
-				log.Fatal(err)
-			}
-			defer f.Close()
-			if _, err := io.Copy(f, r.Body); err != nil {
-				log.Fatal(err)
-			}
-			todos := make([]chan payload, 0)
-			for {
-				chTmp := make(chan payload)
-				select {
-				case ch <- chTmp:
-					f, err := os.OpenFile(tmp, os.O_RDONLY, 0)
-					if err != nil {
-						log.Fatal(err)
-					}
-					chTmp <- payload{f, mime}
-					todos = append(todos, chTmp)
-				default:
-					goto end
-				}
-			}
-		end:
-			for _, chTmp := range todos {
-				fmt.Fprintln(w, (<-chTmp).meta)
-			}
-		} else {
+		mime := r.Header.Get("Content-Type")
+		todos := make([]chan payload, 0)
+		writers := []io.Writer{}
+	For:
+		for {
 			chTmp := make(chan payload)
 			select {
 			case ch <- chTmp:
-				chTmp <- newPayload(r)
-				fmt.Fprintln(w, (<-chTmp).meta)
+				r, w := io.Pipe()
+				chTmp <- payload{r, mime}
+				todos = append(todos, chTmp)
+				writers = append(writers, w)
 			default:
-				w.WriteHeader(http.StatusNotFound)
-				return
+				break For
 			}
+			if single {
+				break
+			}
+		}
+
+		if len(todos) == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		n, err := io.Copy(io.MultiWriter(writers...), r.Body)
+		if err != nil {
+			log.Println("copy Request.Body to MultiWriter", n, err)
+		}
+		for _, w := range writers {
+			w.(io.Closer).Close()
+		}
+
+		for _, chTmp := range todos {
+			fmt.Fprintln(w, (<-chTmp).meta)
 		}
 	}
 }
