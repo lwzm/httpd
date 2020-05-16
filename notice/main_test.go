@@ -46,9 +46,9 @@ func Test_handler(t *testing.T) {
 		}()
 	}
 	time.Sleep(time.Millisecond * 100)
-	e.POST("/multi-get").WithQueryString("single").WithText("foobar").
+	e.POST("/multi-get").WithText("foobar").
 		Expect().Text().Contains("\t")
-	s := e.POST("/multi-get").WithText("foobar").
+	s := e.POST("/multi-get").WithQueryString("broadcast").WithText("foobar").
 		Expect().Text().Raw()
 	assert.Equal(t, n-1, strings.Count(s, "\n"))
 
@@ -59,7 +59,7 @@ func Test_handler(t *testing.T) {
 			}()
 		}
 		time.Sleep(time.Millisecond * 100)
-		s := e.POST("/multi-get").WithText("foobar").
+		s := e.POST("/multi-get").WithQueryString("broadcast").WithText("foobar").
 			Expect().Text().Raw()
 		assert.Equal(t, n, strings.Count(s, "\n"))
 	}

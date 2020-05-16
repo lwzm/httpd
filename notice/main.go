@@ -11,15 +11,15 @@ import (
 )
 
 type payload struct {
-	body io.Writer
-	meta string
+	writer io.Writer
+	meta   string
 }
 
 var channels = sync.Map{}
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	key := r.URL.Path
-	_, single := r.URL.Query()["single"]
+	_, broadcast := r.URL.Query()["broadcast"]
 	ctx := r.Context()
 	v, _ := channels.Load(key)
 	ch, ok := v.(chan chan payload)
@@ -32,7 +32,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		select {
 		case chTmp := <-ch:
 			w.Header().Set("Content-Type", (<-chTmp).meta)
-			chTmp <- payload{meta: httpd.ClientIP(r) + "\t" + r.UserAgent(), body: w}
+			chTmp <- payload{meta: httpd.ClientIP(r) + "\t" + r.UserAgent(), writer: w}
 			<-chTmp
 		case <-ctx.Done():
 			log.Println(ctx)
@@ -49,12 +49,12 @@ func handler(w http.ResponseWriter, r *http.Request) {
 				chTmp <- payload{meta: mime}
 				todos = append(todos, chTmp)
 				peer := <-chTmp
-				writers = append(writers, peer.body)
+				writers = append(writers, peer.writer)
 				fmt.Fprintln(w, peer.meta)
 			default:
 				break For
 			}
-			if single {
+			if !broadcast {
 				break
 			}
 		}
