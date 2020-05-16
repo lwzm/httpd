@@ -11,20 +11,8 @@ import (
 )
 
 type payload struct {
-	body io.Reader
+	body io.Writer
 	meta string
-}
-
-func (data *payload) transport(w http.ResponseWriter) {
-	if s := data.meta; s != "" {
-		w.Header().Set("Content-Type", s)
-	}
-	if f := data.body; f != nil {
-		n, err := io.Copy(w, f)
-		if err != nil {
-			log.Println("written", n, err)
-		}
-	}
 }
 
 var channels = make(map[string](chan chan payload))
@@ -45,9 +33,9 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
 		select {
 		case chTmp := <-ch:
-			data := <-chTmp
-			data.transport(w)
-			chTmp <- payload{meta: httpd.ClientIP(r) + "\t" + r.UserAgent()}
+			w.Header().Set("Content-Type", (<-chTmp).meta)
+			chTmp <- payload{meta: httpd.ClientIP(r) + "\t" + r.UserAgent(), body: w}
+			<-chTmp
 		case <-ctx.Done():
 			log.Println(ctx)
 		}
@@ -60,10 +48,11 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			chTmp := make(chan payload)
 			select {
 			case ch <- chTmp:
-				r, w := io.Pipe()
-				chTmp <- payload{r, mime}
+				chTmp <- payload{meta: mime}
 				todos = append(todos, chTmp)
-				writers = append(writers, w)
+				peer := <-chTmp
+				writers = append(writers, peer.body)
+				fmt.Fprintln(w, peer.meta)
 			default:
 				break For
 			}
@@ -81,12 +70,9 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Println("copy Request.Body to MultiWriter", n, err)
 		}
-		for _, w := range writers {
-			w.(io.Closer).Close()
-		}
 
 		for _, chTmp := range todos {
-			fmt.Fprintln(w, (<-chTmp).meta)
+			close(chTmp)
 		}
 	}
 }

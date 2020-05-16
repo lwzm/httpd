@@ -38,7 +38,7 @@ func Test_handler(t *testing.T) {
 
 	e.POST("/has-no-one-get").Expect().Status(http.StatusNotFound)
 
-	n := 50
+	n := 30
 
 	for i := 0; i < n; i++ {
 		go func() {
