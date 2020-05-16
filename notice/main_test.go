@@ -52,7 +52,7 @@ func Test_handler(t *testing.T) {
 		Expect().Text().Raw()
 	assert.Equal(t, n-1, strings.Count(s, "\n"))
 
-	for idx := 0; idx < 100; idx++ {
+	for idx := 0; idx < 20; idx++ {
 		for i := 0; i < n; i++ {
 			go func() {
 				e.GET("/multi-get").Expect().Status(http.StatusOK).Text().Equal("foobar")

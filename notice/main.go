@@ -15,20 +15,18 @@ type payload struct {
 	meta string
 }
 
-var channels = make(map[string](chan chan payload))
-var mutex = sync.Mutex{}
+var channels = sync.Map{}
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	key := r.URL.Path
 	_, single := r.URL.Query()["single"]
 	ctx := r.Context()
-	mutex.Lock()
-	ch, ok := channels[key]
+	v, _ := channels.Load(key)
+	ch, ok := v.(chan chan payload)
 	if !ok {
 		ch = make(chan chan payload)
-		channels[key] = ch
+		channels.Store(key, ch)
 	}
-	mutex.Unlock()
 
 	if r.Method == "GET" {
 		select {
