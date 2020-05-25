@@ -31,7 +31,10 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
 		select {
 		case chTmp := <-ch:
-			w.Header().Set("Content-Type", (<-chTmp).meta)
+			meta := (<-chTmp).meta
+			if meta != "" {
+				w.Header().Set("Content-Type", meta)
+			}
 			chTmp <- payload{meta: httpd.ClientIP(r) + "\t" + r.UserAgent(), writer: w}
 			<-chTmp
 		case <-ctx.Done():
