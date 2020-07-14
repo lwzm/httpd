@@ -70,6 +70,9 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		n, err := io.Copy(io.MultiWriter(writers...), r.Body)
 		if err != nil {
 			log.Println("copy Request.Body to MultiWriter", n, err)
+			if err != io.ErrUnexpectedEOF {
+				fmt.Fprintln(w, "\n"+err.Error())
+			}
 		}
 
 		for _, chTmp := range todos {
