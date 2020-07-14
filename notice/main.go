@@ -44,6 +44,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		mime := r.Header.Get("Content-Type")
 		todos := make([]chan payload, 0)
 		writers := []io.Writer{}
+		subscribers := []string{}
 	For:
 		for {
 			chTmp := make(chan payload)
@@ -53,7 +54,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 				todos = append(todos, chTmp)
 				peer := <-chTmp
 				writers = append(writers, peer.writer)
-				fmt.Fprintln(w, peer.meta)
+				subscribers = append(subscribers, peer.meta)
 			default:
 				break For
 			}
@@ -67,16 +68,20 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		n, err := io.Copy(io.MultiWriter(writers...), r.Body)
+		headMessage := fmt.Sprintf("%v subscribers", len(subscribers))
+		written, err := io.Copy(io.MultiWriter(writers...), r.Body)
 		if err != nil {
-			log.Println("copy Request.Body to MultiWriter", n, err)
-			if err != io.ErrUnexpectedEOF {
-				fmt.Fprintln(w, "\n"+err.Error())
-			}
+			log.Println("copy Request.Body to MultiWriter", written, err)
+			headMessage += ", but error occurred: " + err.Error()
 		}
 
 		for _, chTmp := range todos {
 			close(chTmp)
+		}
+
+		fmt.Fprintln(w, headMessage)
+		for _, s := range subscribers {
+			fmt.Fprintln(w, s)
 		}
 	}
 }
