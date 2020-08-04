@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/lwzm/httpd"
 )
@@ -69,18 +70,18 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		headMessage := fmt.Sprintf("%v subscribers", len(subscribers))
+		t0 := time.Now()
 		written, err := io.Copy(io.MultiWriter(writers...), r.Body)
 		if err != nil {
 			log.Println("copy Request.Body to MultiWriter", written, err)
-			headMessage += ", but error occurred: " + err.Error()
 		}
 
 		for _, chTmp := range todos {
 			close(chTmp)
 		}
 
-		fmt.Fprintln(w, headMessage)
+		fmt.Fprintf(w, "duplicate: %v	size: %v	cost: %v	error: %v\n",
+			len(subscribers), written, time.Since(t0), err)
 		for _, s := range subscribers {
 			fmt.Fprintln(w, s)
 		}
