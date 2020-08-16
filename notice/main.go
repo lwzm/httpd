@@ -43,6 +43,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			log.Println(ctx)
 		}
 	} else {
+		time.Sleep(0)
 		mime := r.Header.Get("Content-Type")
 		todos := make([]chan payload, 0)
 		writers := []io.Writer{}
@@ -80,7 +81,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			close(chTmp)
 		}
 
-		fmt.Fprintf(w, "duplicate: %v	size: %v	cost: %v	error: %v\n",
+		fmt.Fprintf(w, "duplicate:%v size:%v cost:%v error:%v\n",
 			len(subscribers), written, time.Since(t0), err)
 		for _, s := range subscribers {
 			fmt.Fprintln(w, s)
