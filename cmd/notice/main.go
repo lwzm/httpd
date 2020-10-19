@@ -74,14 +74,14 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		t0 := time.Now()
 		written, err := io.Copy(io.MultiWriter(writers...), r.Body)
 		if err != nil {
-			log.Println("copy Request.Body to MultiWriter", written, err)
+			log.Println("error copy", written, err)
 		}
 
 		for _, chTmp := range todos {
 			close(chTmp)
 		}
 
-		fmt.Fprintf(w, "duplicate:%v size:%v cost:%v error:%v\n",
+		fmt.Fprintf(w, "%v size:%v cost:%v error:%v\n",
 			len(subscribers), written, time.Since(t0), err)
 		for _, s := range subscribers {
 			fmt.Fprintln(w, s)
