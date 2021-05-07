@@ -30,6 +30,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == "GET" {
+		w.(http.Flusher).Flush()
 		select {
 		case chTmp := <-ch:
 			ct := (<-chTmp).meta
