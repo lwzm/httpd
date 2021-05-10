@@ -23,9 +23,9 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	_, broadcast := r.URL.Query()["broadcast"]
 	ctx := r.Context()
 	v, _ := channels.Load(key)
-	ch, ok := v.(chan chan payload)
+	ch, ok := v.(chan chan *payload)
 	if !ok {
-		ch = make(chan chan payload)
+		ch = make(chan chan *payload)
 		channels.Store(key, ch)
 	}
 
@@ -38,7 +38,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", ct)
 			}
 			id := httpd.ClientIP(r) + "\t" + r.URL.RawQuery + "\t" + r.UserAgent()
-			chTmp <- payload{meta: id, writer: w}
+			chTmp <- &payload{meta: id, writer: w}
 			<-chTmp
 		case <-ctx.Done():
 			log.Println(ctx)
@@ -46,15 +46,15 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		time.Sleep(0)
 		mime := r.Header.Get("Content-Type")
-		todos := make([]chan payload, 0)
+		todos := make([]chan *payload, 0, 1)
 		writers := []io.Writer{}
 		subscribers := []string{}
 	For:
 		for {
-			chTmp := make(chan payload)
+			chTmp := make(chan *payload)
 			select {
 			case ch <- chTmp:
-				chTmp <- payload{meta: mime}
+				chTmp <- &payload{meta: mime}
 				todos = append(todos, chTmp)
 				peer := <-chTmp
 				writers = append(writers, peer.writer)
