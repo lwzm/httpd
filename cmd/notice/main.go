@@ -20,8 +20,6 @@ var channels = sync.Map{}
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	key := r.URL.Path
-	_, broadcast := r.URL.Query()["broadcast"]
-	ctx := r.Context()
 	v, _ := channels.Load(key)
 	ch, ok := v.(chan chan *payload)
 	if !ok {
@@ -30,7 +28,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == "GET" {
-		w.(http.Flusher).Flush()
 		select {
 		case chTmp := <-ch:
 			ct := (<-chTmp).meta
@@ -40,15 +37,15 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			id := httpd.ClientIP(r) + "\t" + r.URL.RawQuery + "\t" + r.UserAgent()
 			chTmp <- &payload{meta: id, writer: w}
 			<-chTmp
-		case <-ctx.Done():
-			log.Println(ctx)
+		case <-r.Context().Done():
+			log.Println("canceled", key, r.UserAgent())
 		}
 	} else {
-		time.Sleep(0)
 		mime := r.Header.Get("Content-Type")
 		todos := make([]chan *payload, 0, 1)
 		writers := []io.Writer{}
 		subscribers := []string{}
+		_, broadcast := r.URL.Query()["broadcast"]
 	For:
 		for {
 			chTmp := make(chan *payload)
@@ -75,7 +72,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		t0 := time.Now()
 		written, err := io.Copy(io.MultiWriter(writers...), r.Body)
 		if err != nil {
-			log.Println("error copy", written, err)
+			log.Println("copied", written, err)
 		}
 
 		for _, chTmp := range todos {
